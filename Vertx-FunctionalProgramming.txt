@@ -787,10 +787,354 @@ main method
             System.out.println(error.getMessage());
             //error.printStackTrace();
         });
-
-.............................................................................................
-				Function Composition:Callbacks
 ..............................................................................................
+..............................................................................................
+				Common Functional Interfaces
+.............................................................................................	
+
+How to reduce functional interfaces itself?
+
+if you want to implement lambda, you need functional interface.
+
+Lets i want to design common interfaces which accepts and returns
+
+-single input, no output
+-two input , single output
+-only integer input,return the same
+-two any type of input,return boolean ; predicate
+etc...
+do you think that it is good idea to have your own functional interfaces for
+common uses cases
+No!
+
+Java 8 provides built in functional interfaces.
+
+Java 8 has changed many built in interfaces as functional interface, where ever interface having single methods.
+
+
+eg:
+ java.lang.Runnable 
+
+
+package com.ibm.fp.interfaces.builtin;
+
+public class ThreadImpl {
+    public static void main(String[] args) {
+        Runnable target = () -> System.out.println(Thread.currentThread().getName());
+        Thread thread = new Thread(target);
+        thread.start();
+
+        Thread thread1 = new Thread(()-> System.out.println(Thread.currentThread().getName()));
+        thread1.start();
+    }
+}
+
+package com.ibm.fp.interfaces.builtin;
+
+import java.util.function.*;
+
+public class UtilityFunctions {
+    public static void main(String[] args) {
+        //Supplier
+        Supplier<String> stringSupplier = () -> "Hello";
+        System.out.println(stringSupplier.get());
+        //return only int
+        IntSupplier intSupplier = () -> 100;
+        System.out.println(intSupplier.getAsInt());
+
+        Predicate<Integer> predicate = number -> number > 10;
+        System.out.println(predicate.test(100));
+        System.out.println(predicate.test(1));
+
+        Function<String, String> function = input -> input;
+        System.out.println(function.apply("Hello"));
+
+
+        //Bi -two
+        BiPredicate<Integer, Integer> biPredicate = (a, b) -> a > b;
+        System.out.println(biPredicate.test(10,20));
+    }
+}
+
+............................................................................................
+				  Functional Composition
+............................................................................................
+
+Function composition looks object composition in java.
+
+What is Function Composition?
+	Functional COmposition is a technique to coimbine multiple functions into a single function which uses combined functionality.
+       Built in java functional interfaces provides an ability to chain the functions.
+
+
+package com.ibm.fp.interfaces.builtin;
+
+import java.util.function.Predicate;
+
+public class FunctionComposition {
+    public static void main(String[] args) {
+        Predicate<String> startsWith = text -> text.startsWith("A");
+        Predicate<String> endsWith = text -> text.endsWith("x");
+        //coimbine startsAndendsWith
+        //coimbine with && Operator : which is not readable,looks like imperative
+        // Predicate<String> startsWithAndEndsWith = text -> startsWith.test(text) && endsWith.test(text);
+        //declarative using and mehtod
+        Predicate<String> startsWithAndEndsWith = startsWith.and(endsWith);
+        boolean result = startsWithAndEndsWith.test("A hardworking person must relax");
+        if (result) {
+            System.out.println("Text Starts With A and Ends with e");
+        } else {
+            System.out.println("No Match found");
+
+        }
+        //
+        Predicate<String> composedOR = startsWith.or(startsWithAndEndsWith);
+        String matchFound = composedOR.test("Hello how are you") ? "Match found" : "Match Not Found";
+        System.out.println(matchFound);
+    }
+}
+..............................................................................................
+package com.ibm.fp.interfaces.builtin;
+
+import java.util.function.Function;
+
+public class AdvancedFunctionComposition {
+    public static void main(String[] args) {
+        Function<Integer, Integer> multiplyByTwo = value -> value * 2;
+
+        Function<Integer, Integer> addByThree = value -> value + 3;
+
+        //compose execute the methods right to left // 10+3 =13 = 13 *2 =26
+        Function<Integer, Integer> addThenMultiply = multiplyByTwo.compose(addByThree);
+        System.out.println(addThenMultiply.apply(10));
+
+        //andThen execute the methods left to right
+        Function<Integer, Integer> multiplyAndAdd = multiplyByTwo.andThen(addByThree);
+        System.out.println(multiplyAndAdd.apply(10));
+    }
+}
+............................................................................................
+				Method References
+............................................................................................
+
+
+
+->It is technique to reduce lot of lambda code itself.
+
+method references:
+  ::
+
+Types of method refences:
+
+1.instance method as reference 
+     - this::methodName
+2.static method as reference
+    - ClassName::methodName
+3.constructor as reference.
+    new::constructor
+
+package com.ibm.fp.methodreference;
+
+@FunctionalInterface
+interface Welcome {
+    void sayWelcome(String message);
+}
+
+package com.ibm.fp.methodreference;
+
+
+@FunctionalInterface
+interface UpperCase {
+    String convertToUpper(String message);
+}
+
+package com.ibm.fp.methodreference;
+
+public class MethodReferenceBasic {
+    public static void main(String[] args) {
+        Welcome welcome = null;
+        //get input and print it
+        welcome = name -> System.out.println(name);
+        welcome.sayWelcome("Subramanian");
+        //using method reference
+        welcome = System.out::println;
+        welcome.sayWelcome("Subramanian");
+        //Upper case
+        UpperCase upperCase = null;
+        upperCase = name -> name.toUpperCase();
+        System.out.println(upperCase.convertToUpper("subramanian"));
+        upperCase = String::toUpperCase;
+        System.out.println(upperCase.convertToUpper("subramanian"));
+    }
+}
+............................................................................................
+				methodReference : instance method,static method ,constructors
+............................................................................................
+
+package com.ibm.fp.methodreference;
+
+//
+class MicroTask {
+    public static void startMicroTaskV2() {
+        System.out.println(Thread.currentThread().getName());
+    }
+
+    public void startMicroTask() {
+        System.out.println(Thread.currentThread().getName());
+    }
+}
+
+class Task {
+    private void process() {
+        System.out.println(Thread.currentThread().getName());
+    }
+
+    public void startTask() {
+        Thread thread = null;
+        //anonymous inner class
+        thread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                System.out.println(Thread.currentThread().getName());
+            }
+        });
+        thread.start();
+        //lambda
+        thread = new Thread(() -> System.out.println(Thread.currentThread().getName()));
+        thread.start();
+        //lambda logic into separate method
+        thread = new Thread(() -> {
+            this.process();
+        });
+        thread.start();
+
+        //lambda logic into separate method but how to reduce lambda expression
+        thread = new Thread(this::process);
+        thread.start();
+
+        //lambda logic into separate class
+        MicroTask microTask = new MicroTask();
+        thread = new Thread(() -> {
+            microTask.startMicroTask();
+        });
+        thread.start();
+
+        //lambda logic into separate class
+        thread = new Thread(microTask::startMicroTask);
+        thread.start();
+
+        //lambda logic into separate class
+        thread = new Thread(MicroTask::startMicroTaskV2);
+        thread.start();
+
+    }
+}
+
+
+public class AdvancedMethodReference {
+    public static void main(String[] args) {
+        Task task = new Task();
+        task.startTask();
+    }
+}
+.............................................................................................
+			Built in functional interfaces and how to use method reference
+
+
+import java.util.function.BiFunction;
+import java.util.function.Supplier;
+
+@FunctionalInterface
+interface InventoryProcessor {
+    String process(boolean isStockAvailable);
+}
+
+class Calculator {
+    public static int add(int a, int b) {
+        return a + b;
+    }
+
+    public int subtract(int a, int b) {
+        return a - b;
+    }
+}
+
+class OrderService {
+    public boolean isStockAvailable() {
+        return true;
+    }
+}
+
+class InventoryService {
+
+    public void updateInventor(InventoryProcessor processor) {
+        System.out.println(processor.process(true));
+    }
+}
+
+public class BuiltinFunctionalInterface {
+    public static void main(String[] args) {
+        BiFunction<Integer, Integer, Integer> adder = Calculator::add;
+        System.out.println(adder.apply(10, 10));
+
+        Calculator calculator = new Calculator();
+
+        BiFunction<Integer, Integer, Integer> subtracter = (a, b) -> calculator.subtract(a, b);
+        System.out.println(subtracter.apply(10, 2));
+        BiFunction<Integer, Integer, Integer> subtracterMethodRef = calculator::subtract;
+        System.out.println(subtracterMethodRef.apply(10, 2));
+
+        OrderService orderService = new OrderService();
+        Supplier<Boolean> orderSupplier = null;
+        orderSupplier = () -> orderService.isStockAvailable();
+        System.out.println(orderSupplier.get());
+        orderSupplier = orderService::isStockAvailable;
+        System.out.println(orderSupplier.get());
+
+        InventoryService inventoryService = new InventoryService();
+        inventoryService.updateInventor(res -> {
+            return "Inventory processed" + res;
+        });
+        inventoryService.updateInventor(BuiltinFunctionalInterface::process);
+    }
+    private static String process(boolean res) {
+        return "Inventory processed" + res;
+    }
+}
+............................................................................................
+					Constructors
+.............................................................................................
+
+
+package com.ibm.fp.methodreference;
+
+class Hello {
+    private String message;
+
+    //no arg constructor
+    public Hello() {
+
+    }
+    //single arg
+    public Hello(String message) {
+        this.message = message;
+        System.out.println(this.message);
+    }
+
+    public String getMessage() {
+        return message;
+    }
+}
+package com.ibm.fp.methodreference;
+
+public class ConstructorMethodReference {
+    public static void main(String[] args) {
+        Greeter hello = Hello::new;
+        System.out.println(hello.sayHello("Hello"));
+    }
+}
+........................................XXXXXXXXXXX...........................................
+
 
 
 
