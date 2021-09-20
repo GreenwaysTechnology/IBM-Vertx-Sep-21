@@ -1,0 +1,7 @@
+Lab :
+
+JDK 11
+Maven 3.8.x
+intellij idea
+...............................
+docker desktop -win,mac
