@@ -10,6 +10,9 @@ Foundation for Vertx Tech Stack:
 ...........................................................................................
 				What is functional Programming?
 
+ Programming with Mathmetical Functions
+ f::int -> Bool
+
 -Functional programming is one the programming paradigm.
 
 

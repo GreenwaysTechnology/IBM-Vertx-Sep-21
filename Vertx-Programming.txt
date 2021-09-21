@@ -95,13 +95,235 @@ Third generation :
 
  epoll
 ..............................................................................................
+				  Vertx Programming
+..............................................................................................
+
+Vertx core idea:
+
+Building non blocking , Reactive network io applications
+
+1.web application
+  RESTFull WebServices
+
+
+Vertx is collection of modules 
+
+vertx-core
+vertx-web
+vertx-data
+vertx-microservices
+.........
+
+Core Concepts:
+
+1.Vertx Engine
+    Object , where vertx apps are running
+
+2.Verticle
+   Object, which represent vertx application components.
+
+3.EventBus
+    
+..............................................&&&&&&&&&&&&&&&&&.............................
+
+
+How to setup vertx project
+
+vertx supports
+
+1.maven
+2.gradle
+
+project can be simple 
+
+1.normal java project
+2.standard mvn project
+3.vertx project from https://start.vertx.io/
+..............................................................................................
+
+How to run vertx project:
+
+Dev mode
+  mvn compile exec:java
+
+Production mode
+ java -jar target/vertx-gettingstarted-1.0.0-SNAPSHOT-fat.jar
+.........................................................................................
+
+What you can do with vertx?
+ Any non blocking applications -network based apps -  http,tcp,udp,datagram
+
+package :  io.vertx.core
+
+io.vertx.core
+Interface Vertx 
+   
+Which represents Vertx engine.
+
+Vertx instance can do 
+
+Creating TCP clients and servers
+Creating HTTP clients and servers
+Creating DNS clients
+Creating Datagram sockets
+Setting and cancelling periodic and one-shot timers
+Getting a reference to the event bus API
+Getting a reference to the file system API
+Getting a reference to the shared data API
+Deploying and undeploying verticles
+.............................................................................................
+
+Coding style
+
+1.Vertx apps can be written in regular java program
+2.Vertx apps can be written inside verticle
+
+
+package com.ibm.vertx.core;
+
+import io.vertx.core.Vertx;
+
+public class HelloWorldApp {
+  public static void main(String[] args) {
+    System.out.println("Vertx Starts");
+    //Get the Reference of Vertx Engine
+    Vertx myVertx = Vertx.vertx();
+    //create some http server
+    myVertx.createHttpServer()
+      .requestHandler(httpServerRequest -> httpServerRequest.response().end("Hello")).listen(8080);
+  }
+}
+.............................................................................................
+vertx-core:
+
+-Verticles
+-Event loop Threads
+-Callback based programming
+					
+
+Verticle:
+  -It is java object
+  -It can be deployed and undeployed on vertx instance (engine).
+  -It is based on design pattern called "Actor-like Model" - based on akka frameworks
+  -Verticles are bound to "Event loop thread" , are processed by event loop threads.
+
+Verticle is interface which provides life cycle methods 
+  -init
+  -start - called when verticle during deployment
+  -stop  - called when verticles during undeployment
+
+public HelloWorld{
+
+}
+ new HelloWorld();
+
+Servlet class
+public HelloWorld extends HttpServlet {
+   doGet(){}
+   doPost(){}
+}
+// new HelloWorld()
+Who creates servlet object?
+ -container
+
+-create object
+   -constructor
+-add servlet behaviour :deployment
+  -Attach life cycle methods - init...destory
+
+--listens for request
+
+-when req arrvied - create a thread and attaches that thread , handle requests
+.............................................................................................
+				 Vertx initailzation Process
+...............................................................................................
+
+1.when you run java app
+                                   
+2.vertx engine initalized
+    -Thread creations
+  -Event loop threads
+    which is for non blocking network 
+   io operations
+   -how many based on cpu core
+  -Worker pool threads
+    -cpu instensive task
+    -blocking operations
+
+  -memory allocation
+  .....
+3.Verticle deployment
+   Deployment means allocating
+ resources(binding threads)
+ By default all verticles are bound
+ with event loop threads
+
+				      .....................
+					  V1 ,V2,V3......
+				  ..      | .........................           
+
+					  T1.T2,T3, W1,W2,W3,W4
+                                         Vertx Engine Initalized
+					.....................
+						JVM 
+.............................................................................................
+
+Steps:
+
+1.write verticle
+
+2.deploy the verticle
+
+ -via launcher
+ -via code 
 
 
 
+import io.vertx.core.AbstractVerticle;
 
+public class GreeterVerticle extends AbstractVerticle {
+  //life cycle methods
 
+  @Override
+  public void start() throws Exception {
+    super.start();
+    System.out.println("Greeter verticle is deployed");
+  }
 
+  @Override
+  public void stop() throws Exception {
+    super.stop();
+  }
+}
 
+how to deploy ?
+
+ -via launcher
+  main class and method provided by vertx 
+
+pom.xml
+<main.verticle>com.ibm.vertx.core.GreeterVerticle</main.verticle>
+<launcher.class>io.vertx.core.Launcher</launcher.class>
+
+via :
+package com.ibm.vertx.core;
+
+import io.vertx.core.Vertx;
+import io.vertx.example.util.Runner;
+
+public class GreeterDeployer {
+  public static void main(String[] args) {
+    Vertx vertx = Vertx.vertx();
+    vertx.deployVerticle(new GreeterVerticle());
+    vertx.deployVerticle(GreeterVerticle.class.getName());
+    vertx.deployVerticle("com.ibm.vertx.core.GreeterVerticle");
+    Runner.runExample(GreeterVerticle.class);
+
+  }
+}
+.............................................................................................
+		     MicroServices arch and implementation using Vertx
+............................................................................................
 
 
 
