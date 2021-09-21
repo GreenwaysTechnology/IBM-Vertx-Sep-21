@@ -1,0 +1,112 @@
+                                     Vertx
+..............................................................................................
+                        Eclipse Vert.x™ Reactive applications on the JVM
+..............................................................................................
+
+                       Blocking ,Non Blocking,MultiThreading,Async Programming
+			        IO - Blocking IO,NonBlocking IO 
+..............................................................................................
+
+Operating system layers
+
+1.userspace
+
+2.kernal space
+
+
+What is file Descriptor?
+
+ -It is data structure - located inside kernal
+ -It is created per process for eg for jvm , there will be one file descriptor.
+
+Why file descriptor?
+  
+  Which is the bridge between application process and hardware layer.
+
+Application process - could be any runtime - jvm,clr,anyruntime
+............................................................................................
+  
+Two types of api
+
+1.high level api - java api
+ 
+FileInputStream fs = new FileInputStream(new File("foo.txt"));
+
+somecode
+while((char c=rs.read()) {
+   print c;
+}
+some code
+
+2.low level api - c
+
+System call - os call
+  read()
+
+.............................................................................................
+
+Blocking IO: 
+
+ The application cant do any process until io operation is completed
+
+while((char c=rs.read()) {
+   print c;
+}
+some code
+ here blocking io code, "some code" will not run until while loop terminates : Blocking IO
+............................................................................................
+		 Networking and Blocking IO - Traditional Web Server working pattern
+.............................................................................................
+
+Request per thread - for every request a new thread is created.
+
+1000 request = 1000 threads
+
+This arch introduced in 1995.
+
+Draback of request per thread model.
+
+In 2000, the problem was identifed----more request more thread
+
+When a thread is created
+ - it requires some memory
+ - if thread is not in use for some time, cpu will put the thread in sleep state
+    if data ready, the os will put thread in active state  :Ctx switch.
+
+C10K Problem
+
+linux apis
+
+ blocking api              non blocking api(2000)
+  read                       select
+
+
+Non blocking socket api
+
+select - to return control from the fsd
+read -- to read ready data  from the kernal buffer.
+
+Second generation
+
+poll---------------------------------|
+    |---------------------------------|
+
+Third generation :
+
+ epoll
+..............................................................................................
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
