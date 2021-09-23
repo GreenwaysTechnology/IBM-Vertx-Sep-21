@@ -1470,6 +1470,232 @@ public class MainAppVerticle extends AbstractVerticle {
   }
 
 }
+..............................................................................................
+		Threading Models - Non blocking(event loop threads) /Worker pool threads
+.............................................................................................
+
+.............................................................................................
+                          Blocking code and Non blocking Code:
+..............................................................................................
+
+Vertx has been designed to work with nonblocking.
+ non blocking web apps,database,tcp,file system..............
+
+Does vertx support blocking code and what if i write blocking code ?
+
+Yes! blocking code, what if i write blocking inside verticles.
+
+Use case : 
+
+You are building vertx application, vertx application need to talk to hibernate/jpa layer.
+Vertx is non blocking but hibernate blocking.
+
+if you write blocking inside non blocking vertx will throw error, but how to bridge blocking with non-blocking.
+	
+
+Blocking code
+
+-Thread.sleep
+-long running task
+-legacy file io
+-legacy network 
+-database 
+-external api
+
+
+ Any blocking code can't be executed inside event loop thread.
+ Any blocking code must be executed in a separte threads - Worker pool threads.
+ Worker pool threads are used for running long running blocking code.
+
+There are many ways.
+
+how to process blocking code
+
+1.Change the verticle thread from event loop thread to worker pool thread
+  These verticle are called worker verticles
+2.via an blocking apis provided by vertx.
+		
+
+
+Threading Blocking timeout:
+
+Generally we should not block the event loop thread for long time.
+How long? 2000ms - default blocking timeout.
+if the code blocks beyond 2000ms, 
+
+-it will give warining
+-if it beyond warining, it will throw execption.
+
+
+package com.cts.vertx.microservice.blocking;
+
+import io.vertx.core.Vertx;
+
+public class BlockTheVertilcle {
+  public static void main(String[] args) {
+    Vertx vertx = Vertx.vertx();
+    vertx.deployVerticle(new BlockingVerticle());
+  }
+}
+
+package com.cts.vertx.microservice.blocking;
+
+import io.vertx.core.AbstractVerticle;
+
+public class BlockingVerticle extends AbstractVerticle {
+  @Override
+  public void start() throws Exception {
+    super.start();
+    System.out.println(Thread.currentThread().getName());
+    Thread.sleep(10000);
+    System.out.println("Sleep over");
+  }
+}
+
+Aug 27, 2021 4:48:45 PM io.vertx.core.impl.BlockedThreadChecker
+WARNING: Thread Thread[vert.x-eventloop-thread-0,5,main] has been blocked for 2612 ms, time limit is 2000 ms
+Aug 27, 2021 4:48:46 PM io.vertx.core.impl.BlockedThreadChecker
+WARNING: Thread Thread[vert.x-eventloop-thread-0,5,main] has been blocked for 3612 ms, time limit is 2000 ms
+Aug 27, 2021 4:48:47 PM io.vertx.core.impl.BlockedThreadChecker
+WARNING: Thread Thread[vert.x-eventloop-thread-0,5,main] has been blocked for 4613 ms, time limit is 2000 ms
+Aug 27, 2021 4:48:48 PM io.vertx.core.impl.BlockedThreadChecker
+WARNING: Thread Thread[vert.x-eventloop-thread-0,5,main] has been blocked for 5614 ms, time limit is 2000 ms
+io.vertx.core.VertxException: Thread blocked
+	at java.base@11.0.11/java.lang.Thread.sleep(Native Method)
+	at app//com.cts.vertx.microservice.blocking.BlockingVerticle.start(BlockingVerticle.java:10)
+	at app//io.vertx.core.AbstractVerticle.start(AbstractVerticle.java:106)
+	at app//io.vertx.core.impl.DeploymentManager.lambda$doDeploy$5(DeploymentManager.java:196)
+	at app//io.vertx.core.impl.DeploymentManager$$Lambda$77/0x0000000800178840.handle(Unknown Source)
+	at app//io.vertx.core.impl.AbstractContext.dispatch(AbstractContext.java:96)
+	at app//io.vertx.core.impl.AbstractContext.dispatch(AbstractContext.java:59)
+	at app//io.vertx.core.impl.EventLoopContext.lambda$runOnContext$0(EventLoopContext.java:37)
+	at app//io.vertx.core.impl.EventLoopContext$$Lambda$78/0x0000000800179440.run(Unknown Source)
+	at app//io.netty.util.concurrent.AbstractEventExecutor.safeExecute(AbstractEventExecutor.java:164)
+	at app//io.netty.util.concurrent.SingleThreadEventExecutor.runAllTasks(SingleThreadEventExecutor.java:472)
+	at app//io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:500)
+	at app//io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:989)
+	at app//io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at app//io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base@11.0.11/java.lang.Thread.run(Thread.java:834)
+
+
+..........................................................................................
+	What if i want to write blocking code , i need to handle smothly
+.........................................................................................
+
+i need to run all blocking code in a separate of thread of execution.
+
+Types of Threads
+
+1.Event loop threads
+    -Used only for running non blocking operations
+2.Worker pool threads
+    -Used to run blocking operations.
+
+
+Types of Verticle:
+
+1.standard Verticle
+   Verticles are normal , executed by event loop thread
+2.Woker verticles
+   Verticles are special,executed by a separate thread of execution called "Worker poll threads".
+
+How to write worker verticle?
+
+DeployementOptions:
+ Object used to configure the runtime parameter of a verticle
+
+ DeploymentOptions options = new DeploymentOptions().setWorker(true);
+    vertx.deployVerticle(new WorkerVerticle(), options);
+
+VertxOptions:
+  Object used to configure the vertx engine
+ like workerpool thread size....
+
+package com.ibm.microservice.blocking;
+
+import io.vertx.core.DeploymentOptions;
+import io.vertx.core.Vertx;
+import io.vertx.core.VertxOptions;
+
+public class WorkerVerticleMain {
+  public static void main(String[] args) {
+    VertxOptions vertxOptions = new VertxOptions().setWorkerPoolSize(20);
+    Vertx vertx = Vertx.vertx(vertxOptions);
+    DeploymentOptions options = new DeploymentOptions().setWorker(true);
+    for (int i = 0; i < 50; i++)
+      vertx.deployVerticle(new BlockingCodeVerticle(), options);
+
+  }
+}
+............................................................................................
+			What if i want to write blocking inside non blocking context
+.....................................................................................
+.............................................................................................
+	    How to write blocking code and non blocking in the same verticle
+.............................................................................................
+
+Incase i have 2 methods are blocking methods and 3 methods are non blocking methods in a single verticle?
+
+
+2 methods must be handled by work pool threads
+3 methods must be handled by event loop threads.
+
+vertx.executeBlocking(blockingcode,grabblocking result);
+
+
+package com.ibm.microservice.blocking;
+
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.ext.web.Router;
+
+public class ExecuteBlockingVerticle extends AbstractVerticle {
+  private GreeterService greeterService = new GreeterService();
+
+  private void runBlocking() {
+    vertx.executeBlocking(blockingHandler -> {
+      System.out.println("Blocking Code Runs in -->" + Thread.currentThread().getName());
+      //calls blocking api
+      try {
+        String result = greeterService.getMessage();
+        blockingHandler.complete(result);
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      }
+    }, ar -> {
+      System.out.println("Nonblocking Code Runs in -->" + Thread.currentThread().getName());
+      if (ar.succeeded()) {
+        System.out.println(ar.result());
+      }
+    });
+  }
+
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start(startPromise);
+    //Rest service talks to blocking api , then how to handle it
+    Router router = Router.router(vertx);
+
+    //hanlder method is only for non blocking code
+    //router.get("/api/block").handler();
+    router.get("/api/block").blockingHandler(rc -> {
+      try {
+        String result = greeterService.getMessage();
+        rc.response().setStatusCode(200).end(result);
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      }
+    });
+
+    vertx.createHttpServer().requestHandler(router).listen(3000, server -> {
+      System.out.println("Server is running " + server.result().actualPort());
+    });
+
+  }
+}
+
+
 
 
 

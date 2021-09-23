@@ -51,7 +51,7 @@ public class ProductGateWayVerticle extends AbstractVerticle {
     //request-reply.
     router.get("/api/products/stock/:name").handler(rc -> {
       String param = rc.request().getParam("name");
-      //point to point
+      //request-reply
       JsonObject jsonObject = new JsonObject().put("name", param);
       vertx.eventBus().request(Address.IS_STOCK_AVAILABLE, jsonObject, ar -> {
         if (ar.succeeded()) {
