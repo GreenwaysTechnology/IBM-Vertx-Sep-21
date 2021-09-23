@@ -780,25 +780,696 @@ public class ReactiveWebServer extends AbstractVerticle {
   }
 }
 ............................................................................................
-				CURD Operations
+				 CURD Operations - Data Base
 ...........................................................................................
 
 GET,POST,DELETE,PUT
 ............................................................................................
 
-  
+  In vertx web layer is non blocking, database layer can also be non blocking.
+
+Vert only supports jdbc technology in non blocking way.
+If i want to write jpa,hibernate, yes we can but which will be blocking way.
+
+Non Blocking JDBC and Non blocking Web
+......................................
+
+Vert.x JDBC client:
+
+This client allows you to interact with any JDBC compliant database using an asynchronous API from your Vert.x application.
+
+The client API is represented with the interface 
+JDBCClient
+.
+
+To use this project, add the following dependency to the dependencies section of your build descriptor:
 
 
+SQL Client Templates
+A small library designed to facilitate the execution and data manipulation of SQL queries
+..............................................................................................
+				Service
+
+package com.ibm.microservice.web.jdbc;
+
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
+import io.vertx.core.Handler;
+import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
+import io.vertx.jdbcclient.JDBCPool;
+import io.vertx.sqlclient.RowSet;
+import io.vertx.sqlclient.SqlResult;
+import io.vertx.sqlclient.templates.SqlTemplate;
+import io.vertx.sqlclient.templates.TupleMapper;
+
+import java.util.Arrays;
+import java.util.Map;
+
+public class ProductService {
+  //SQL Statements
+  //CREATE TABLE
+  String CRATE_TABLE = "CREATE TABLE IF NOT EXISTS products(id int IDENTITY, name VARCHAR(255), price FLOAT, weight INT)";
+  //insert
+  String insertQuery = "INSERT INTO  products(name,price,weight) VALUES (#{name},#{price},#{weight})";
+  private Vertx vertx;
+  //jdbc connection
+  private JDBCPool client;
+  //SqlTemplate api references
+  private SqlTemplate<Map<String, Object>, RowSet<JsonObject>> getProductTemplate;
+  private SqlTemplate<JsonObject, SqlResult<Void>> addProductTemplate;
+
+  public ProductService(Vertx vertx) {
+    this.vertx = vertx;
+    init();
+  }
+
+  private void init() {
+    //initlaize the connection
+    client = JDBCPool.pool(this.vertx, new JsonObject()
+      .put("url", "jdbc:hsqldb:mem:test?shutdown=true")
+      .put("dirver_class", "org.hsqldb.jdbcDriver"));
+    //Test Connection
+    client.getConnection().onSuccess(System.out::println).onFailure(System.out::println);
+    addProductTemplate = SqlTemplate.forUpdate(client, insertQuery).mapFrom(TupleMapper.jsonObject());
+
+  }
+
+  public Future createTable() {
+    return client.query(CRATE_TABLE)
+      .execute()
+      .compose(res -> addProductTemplate.executeBatch(
+        Arrays.asList(
+          new JsonObject().put("name", "Tv").put("price", 10000).put("weight", 2),
+          new JsonObject().put("name", "watch").put("price", 234).put("weight", 2),
+          new JsonObject().put("name", "radio").put("price", 1000).put("weight", 2),
+          new JsonObject().put("name", "computer").put("price", 345).put("weight", 2),
+          new JsonObject().put("name", "tableandchair").put("price", 8999).put("weight", 2))));
+  }
+
+  public void findAllProducts(Handler<AsyncResult<String>> aHandler) {
+    String selectProducts = "SELECT * From products";
+    client.query(selectProducts)
+      .execute(rowSet -> {
+        if (rowSet.failed()) {
+          //rc.fail(500);
+          aHandler.handle(Future.failedFuture("500"));
+        } else {
+          JsonArray arr = new JsonArray();
+          rowSet.result().forEach(row -> {
+            arr.add(row.toJson());
+          });
+          aHandler.handle(Future.succeededFuture(arr.encodePrettily()));
+        }
+      });
+
+  }
+
+
+}
+.............................................................................................
+package com.ibm.microservice.web.jdbc;
+
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.core.http.HttpMethod;
+import io.vertx.ext.web.Router;
+import io.vertx.ext.web.RoutingContext;
+import io.vertx.ext.web.handler.BodyHandler;
+
+public class ProductRestVerticle extends AbstractVerticle {
+  private ProductService productService;
+
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start();
+    productService = new ProductService(vertx);
+    //1-connection-success-create tables-start web server
+    productService.createTable().compose(v -> {
+      //After inserting data : start web part
+      Router router = Router.router(vertx);
+
+      //Middlewares (filters) : Which are executed before handling requests
+
+      //this middleware called for any type of request and any type of url
+      router.route().handler(rc -> {
+        System.out.println(rc.request().method() + " " + rc.request().path());
+        rc.next();
+      });
+      //i want middleware sepecific to that url
+      router.route(HttpMethod.GET, "/api/products").handler(rc -> {
+        System.out.println("Products api called");
+        rc.next();
+      });
+      //Builtin middlewares: BodyHandler is json seralizer which serialize the incoming json
+      //payload into JsonObject
+      router.route().handler(BodyHandler.create());
+
+      //Rest apis
+      //Get all the products from the database
+      router.get("/api/products").handler(this::handleGetProducts);
+      //create new product
+      router.post("/api/products").handler(this::handleAddProducts);
+
+      return vertx.createHttpServer().requestHandler(router).listen(8080, server -> {
+        System.out.println("Product Service is Running " + server.result().actualPort());
+      });
+    });
+  }
+
+  private void handleAddProducts(RoutingContext routingContext) {
+
+  }
+
+  private void handleGetProducts(RoutingContext routingContext) {
+    productService.findAllProducts(asyncResult -> {
+      if (asyncResult.succeeded()) {
+        routingContext.response()
+          .setStatusCode(200)
+          .putHeader("content-type", "application/json")
+          .end(asyncResult.result());
+      }
+    });
+  }
+}
+................
+
+Add logic : YOu try Yourself.
+private void handleAddProducts(RoutingContext rc) {
+    HttpServerResponse response = rc.response();
+    JsonObject product = rc.getBodyAsJson();
+    addProductTemplate.execute(product)
+      .onSuccess(res -> {
+        response.setStatusCode(201).end("Created");
+      }).onFailure(err -> {
+        response.setStatusCode(500);
+      });
+  }
+.............................................................................................
+				   Service Communications
+.............................................................................................
+
+SERVICE Types
+
+1.REST Service
+2.Non Service
+   -Event Bus
+
+REST --HTTP- REST
+
+REST--Event Bus (tcp)----NOnService
 
 
    
 
+REST --- REST : WebClient
+
+<dependency>
+ <groupId>io.vertx</groupId>
+ <artifactId>vertx-web-client</artifactId>
+ <version>4.1.4</version>
+</dependency>
+
+.............................................................................................
+				Service Communication : Micro services
+.............................................................................................
+
+Remote Procedure Invocation
+Messaging
+Domain-specific protocol
+Idempotent Consumer
+.............................................................................................
+RPI : 
+REST
+gRPC
+Apache Thrift
+............................................................................................
+
+REST
+....
+ The Services can talk each other via  http protocal.
+
+How vertx implements HTTP communication?
+
+Vert.x Web Client:
+.................
+
+Vert.x Web Client is an asynchronous HTTP and HTTP/2 client.
+
+The Web Client makes easy to do HTTP request/response interactions with a web server, and provides advanced features like:
 
 
+package com.ibm.microservice.rest.communication;
+
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.ext.web.Router;
+import io.vertx.ext.web.client.HttpResponse;
+import io.vertx.ext.web.client.WebClient;
+
+public class ProductGateWayVerticle extends AbstractVerticle {
+
+  private WebClient webClient;
+
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start(startPromise);
+    webClient = WebClient.create(vertx);
+    Router router = Router.router(vertx);
+    router.get("/api/products").handler(rc -> {
+      //make request
+      webClient.get(8080, "localhost", "/api/products")
+        .send(ar -> {
+          if (ar.succeeded()) {
+            HttpResponse<Buffer> response = ar.result();
+            rc.response().
+              setStatusCode(200).
+              putHeader("content-type", "application/json")
+              .end(response.bodyAsString());
+          } else {
+            rc.response().setStatusCode(500).end(ar.cause().getMessage());
+          }
+        });
+    });
 
 
+    vertx.createHttpServer().requestHandler(router).listen(3000, server -> {
+      int port = server.result().actualPort();
+      System.out.println("APIGateWay is Running in ---" + port);
+    });
+  }
+}
+package com.ibm.microservice.web.jdbc;
+
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.core.http.HttpMethod;
+import io.vertx.ext.web.Router;
+import io.vertx.ext.web.RoutingContext;
+import io.vertx.ext.web.handler.BodyHandler;
+
+public class ProductRestVerticle extends AbstractVerticle {
+  private ProductService productService;
+
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start();
+    productService = new ProductService(vertx);
+    //1-connection-success-create tables-start web server
+    productService.createTable().compose(v -> {
+      //After inserting data : start web part
+      Router router = Router.router(vertx);
+
+      //Middlewares (filters) : Which are executed before handling requests
+
+      //this middleware called for any type of request and any type of url
+      router.route().handler(rc -> {
+        System.out.println(rc.request().method() + " " + rc.request().path());
+        rc.next();
+      });
+      //i want middleware sepecific to that url
+      router.route(HttpMethod.GET, "/api/products").handler(rc -> {
+        System.out.println("Products api called");
+        rc.next();
+      });
+      //Builtin middlewares: BodyHandler is json seralizer which serialize the incoming json
+      //payload into JsonObject
+      router.route().handler(BodyHandler.create());
+
+      //Rest apis
+      //Get all the products from the database
+      router.get("/api/products").handler(this::handleGetProducts);
+      //create new product
+      router.post("/api/products").handler(this::handleAddProducts);
+
+      return vertx.createHttpServer().requestHandler(router).listen(8080);
+    }).<Void>mapEmpty().onComplete(startPromise);
+  }
+
+//  <--Todo - ->
+  private void handleAddProducts(RoutingContext routingContext) {
+
+  }
+
+  private void handleGetProducts(RoutingContext routingContext) {
+    productService.findAllProducts(asyncResult -> {
+      if (asyncResult.succeeded()) {
+        routingContext.response()
+          .setStatusCode(200)
+          .putHeader("content-type", "application/json")
+          .end(asyncResult.result());
+      }
+    });
+  }
+}
+package com.ibm.microservice.web.jdbc;
+
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
+import io.vertx.core.Handler;
+import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
+import io.vertx.jdbcclient.JDBCPool;
+import io.vertx.sqlclient.RowSet;
+import io.vertx.sqlclient.SqlResult;
+import io.vertx.sqlclient.templates.SqlTemplate;
+import io.vertx.sqlclient.templates.TupleMapper;
+
+import java.util.Arrays;
+import java.util.Map;
+
+public class ProductService {
+  //SQL Statements
+  //CREATE TABLE
+  String CRATE_TABLE = "CREATE TABLE IF NOT EXISTS products(id int IDENTITY, name VARCHAR(255), price FLOAT, weight INT)";
+  //insert
+  String insertQuery = "INSERT INTO  products(name,price,weight) VALUES (#{name},#{price},#{weight})";
+  private Vertx vertx;
+  //jdbc connection
+  private JDBCPool client;
+  //SqlTemplate api references
+  private SqlTemplate<Map<String, Object>, RowSet<JsonObject>> getProductTemplate;
+  private SqlTemplate<JsonObject, SqlResult<Void>> addProductTemplate;
+
+  public ProductService(Vertx vertx) {
+    this.vertx = vertx;
+    init();
+  }
+
+  private void init() {
+    //initlaize the connection
+    client = JDBCPool.pool(this.vertx, new JsonObject()
+      .put("url", "jdbc:hsqldb:mem:test?shutdown=true")
+      .put("dirver_class", "org.hsqldb.jdbcDriver"));
+    //Test Connection
+    client.getConnection().onSuccess(System.out::println).onFailure(System.out::println);
+    addProductTemplate = SqlTemplate.forUpdate(client, insertQuery).mapFrom(TupleMapper.jsonObject());
+
+  }
+
+  public Future createTable() {
+    return client.query(CRATE_TABLE)
+      .execute()
+      .compose(res -> addProductTemplate.executeBatch(
+        Arrays.asList(
+          new JsonObject().put("name", "Tv").put("price", 10000).put("weight", 2),
+          new JsonObject().put("name", "watch").put("price", 234).put("weight", 2),
+          new JsonObject().put("name", "radio").put("price", 1000).put("weight", 2),
+          new JsonObject().put("name", "computer").put("price", 345).put("weight", 2),
+          new JsonObject().put("name", "tableandchair").put("price", 8999).put("weight", 2))));
+  }
+
+  public void findAllProducts(Handler<AsyncResult<String>> aHandler) {
+    String selectProducts = "SELECT * From products";
+    client.query(selectProducts)
+      .execute(rowSet -> {
+        if (rowSet.failed()) {
+          //rc.fail(500);
+          aHandler.handle(Future.failedFuture("500"));
+        } else {
+          JsonArray arr = new JsonArray();
+          rowSet.result().forEach(row -> {
+            arr.add(row.toJson());
+          });
+          aHandler.handle(Future.succeededFuture(arr.encodePrettily()));
+        }
+      });
+
+  }
 
 
+}
+package com.ibm.microservices;
+
+import io.vertx.core.Promise;
+import io.vertx.reactivex.core.AbstractVerticle;
+
+public class MainAppVerticle extends AbstractVerticle {
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start(startPromise);
+    vertx.rxDeployVerticle("com.ibm.microservice.web.jdbc.ProductRestVerticle").subscribe(r -> {
+      System.out.println("ProductRestVerticle " + r + "deployed");
+    }, err -> {
+      System.out.println("ProductRestVerticle not deployed" + err.getMessage());
+    });
+    vertx.rxDeployVerticle("com.ibm.microservice.rest.communication.ProductGateWayVerticle").subscribe(r -> {
+      System.out.println("ProductGateWayVerticle " + r + "deployed");
+    }, err -> {
+      System.out.println("ProductGateWayVerticle not deployed" + err.getMessage());
+    });
+  }
+
+}
+..............................................................................................				Service Communication -What if my service is not REST API	
+
+					 EventBus
+...........................................................................................
+
+
+............................................................................................
+				  Back End Services Communicaiton : EDA 
+............................................................................................
+
+EventBus:
+  EventBus is used to enable service to service communication via events
+..............................................................................................
+
+
+1.message oriented style :Event Bus
+
+Event Bus:
+
+-Event Bus is nerve of vertx systems.
+
+-Vertx By default is distributed
+
+-Vertx carries distributed architecture by default
+
+-In Vertx Verticles can communicate via Centraized Broker which is built in called event Bus.
+-Event Bus uses tcp transport layer by default
+-EventBus can send and recive data in the form of json and buffer
+
+
+How verticle has been designed to adopt this architecture?
+
+Verticle follows a design pattern  "Actor-like Model" ---->Actor Model design pattern
+
+
+Event Bus:
+
+1.Event Bus can allow verticles sends data from one place to another place
+2.Event Bus forms a distributed peer-to-peer messaging system spannining multiple server nodes   and multiple browers.
+3.Event bus allows sending messages in three ways
+  1.pub/sub : one to many
+  2.point-to-point : one to one
+  3.request-reply(reponse) - one to one with acknowlegement.
+
+4.Event bus identifies clients via "addressing"
+   Messages are sent on the event bus to an "address"
+   Address schemes can be any naming convention, recommendation is dns model "in.news.covid"
+   
+5.Handlers
+   Since vertx is non blocking, messages are processed by handlers.
+   You have to register a handler at an address
+
+6.Type of Data
+   Data type of message could be any primitive-int,char,boolean,String, Buffer,JSON
+
+   Per Vertx Engine only One Event Bus-singleTon
+..........................................................................................
+			PUB-SUB,point to point,request-reply
+............................................................................................
+
+Three Verticles:
+
+1.HTTP verticle- which will send messages to other verticles - back end verticles
+
+
+package com.ibm.microservices;
+
+public class Address {
+  public static final String PRODUCT_INFO = "product.info";
+  public static final String BILLING_INFO = "billing.info";
+  public static final String IS_STOCK_AVAILABLE = "stock.available";
+
+
+}
+
+package com.ibm.microservice.backend.communication;
+
+import com.ibm.microservices.Address;
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.core.eventbus.EventBus;
+import io.vertx.core.eventbus.MessageConsumer;
+import io.vertx.core.json.JsonObject;
+
+
+public class BillingVerticle extends AbstractVerticle {
+
+  private void getProductInfo() {
+    EventBus eventBus = vertx.eventBus();
+    MessageConsumer<String> consumer = eventBus.consumer(Address.PRODUCT_INFO);
+    //list for message
+    consumer.handler(message -> {
+      System.out.println(BillingVerticle.class.getName() + "  -  " + message.body());
+    });
+  }
+
+  private void getBillingInfo() {
+    EventBus eventBus = vertx.eventBus();
+    MessageConsumer<JsonObject> consumer = eventBus.consumer(Address.BILLING_INFO);
+    //list for message
+    consumer.handler(message -> {
+      System.out.println(BillingVerticle.class.getName() + "  -  " + message.body());
+      //System.out.println(message.body().getInteger("amount"));
+    });
+  }
+
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start(startPromise);
+    getBillingInfo();
+  }
+}
+
+package com.ibm.microservice.backend.communication;
+
+import com.ibm.microservices.Address;
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.core.eventbus.EventBus;
+import io.vertx.core.eventbus.MessageConsumer;
+import io.vertx.core.json.JsonObject;
+
+public class InventoryVerticle extends AbstractVerticle {
+  private void productInfo() {
+    EventBus eventBus = vertx.eventBus();
+    MessageConsumer<String> consumer = eventBus.consumer(Address.PRODUCT_INFO);
+    //list for message
+    consumer.handler(message -> {
+      System.out.println(InventoryVerticle.class.getName() + "  -  " + message.body());
+    });
+  }
+
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start(startPromise);
+
+    EventBus eventBus = vertx.eventBus();
+    MessageConsumer<JsonObject> consumer = eventBus.consumer(Address.IS_STOCK_AVAILABLE);
+    //list for message
+    consumer.handler(message -> {
+      System.out.println(InventoryVerticle.class.getName() + "  -  " + message.body());
+      String productName = message.body().getString("name");
+      if (productName.equals("tv")) {
+        message.reply("Stock Available");
+      } else {
+        message.reply("Out of Stock");
+      }
+    });
+
+  }
+}
+package com.ibm.microservice.web.jdbc;
+
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.core.http.HttpMethod;
+import io.vertx.ext.web.Router;
+import io.vertx.ext.web.RoutingContext;
+import io.vertx.ext.web.handler.BodyHandler;
+
+public class ProductRestVerticle extends AbstractVerticle {
+  private ProductService productService;
+
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start();
+    productService = new ProductService(vertx);
+    //1-connection-success-create tables-start web server
+    productService.createTable().compose(v -> {
+      //After inserting data : start web part
+      Router router = Router.router(vertx);
+
+      //Middlewares (filters) : Which are executed before handling requests
+
+      //this middleware called for any type of request and any type of url
+      router.route().handler(rc -> {
+        System.out.println(rc.request().method() + " " + rc.request().path());
+        rc.next();
+      });
+      //i want middleware sepecific to that url
+      router.route(HttpMethod.GET, "/api/products").handler(rc -> {
+        System.out.println("Products api called");
+        rc.next();
+      });
+      //Builtin middlewares: BodyHandler is json seralizer which serialize the incoming json
+      //payload into JsonObject
+      router.route().handler(BodyHandler.create());
+
+      //Rest apis
+      //Get all the products from the database
+      router.get("/api/products").handler(this::handleGetProducts);
+      //create new product
+      router.post("/api/products").handler(this::handleAddProducts);
+
+      return vertx.createHttpServer().requestHandler(router).listen(8080);
+    }).<Void>mapEmpty().onComplete(startPromise);
+  }
+
+//  <--Todo - ->
+  private void handleAddProducts(RoutingContext routingContext) {
+
+  }
+
+  private void handleGetProducts(RoutingContext routingContext) {
+    productService.findAllProducts(asyncResult -> {
+      if (asyncResult.succeeded()) {
+        routingContext.response()
+          .setStatusCode(200)
+          .putHeader("content-type", "application/json")
+          .end(asyncResult.result());
+      }
+    });
+  }
+}
+package com.ibm.microservices;
+
+import io.vertx.core.Promise;
+import io.vertx.reactivex.core.AbstractVerticle;
+
+public class MainAppVerticle extends AbstractVerticle {
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start(startPromise);
+    vertx.rxDeployVerticle("com.ibm.microservice.web.jdbc.ProductRestVerticle").subscribe(r -> {
+      System.out.println("ProductRestVerticle " + r + "deployed");
+    }, err -> {
+      System.out.println("ProductRestVerticle not deployed" + err.getMessage());
+    });
+    vertx.rxDeployVerticle("com.ibm.microservice.rest.communication.ProductGateWayVerticle").subscribe(r -> {
+      System.out.println("ProductGateWayVerticle " + r + "deployed");
+    }, err -> {
+      System.out.println("ProductGateWayVerticle not deployed" + err.getMessage());
+    });
+    vertx.rxDeployVerticle("com.ibm.microservice.backend.communication.BillingVerticle").subscribe(r -> {
+      System.out.println("BillingVerticle " + r + " deployed");
+    }, err -> {
+      System.out.println("BillingVerticle not deployed" + err.getMessage());
+    });
+    vertx.rxDeployVerticle("com.ibm.microservice.backend.communication.InventoryVerticle").subscribe(r -> {
+      System.out.println("InventoryVerticle " + r + " deployed");
+    }, err -> {
+      System.out.println("InventoryVerticle not deployed" + err.getMessage());
+    });
+  }
+
+}
 
 
 

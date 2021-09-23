@@ -6,7 +6,6 @@ import io.vertx.reactivex.ext.web.Router;
 public class ReactiveWebServer extends AbstractVerticle {
 
   private void simpleReactive() {
-
     //web
     vertx.createHttpServer().requestHandler(rc -> {
 //      HttpServerResponse response = rc.response();
