@@ -1694,13 +1694,818 @@ public class ExecuteBlockingVerticle extends AbstractVerticle {
 
   }
 }
+.............................................................................................
+				Micro services -External  Configuration
+..............................................................................................
+
+...........................................................................................
+				Distributed Configuration
+..........................................................................................
+Vertx Configuration :Distributed Configuration:
+.........................
+
+How to configure Vertx application:
+
+Vert.x Config
+  This component provides an extensible way to configure Vert.x applications.
+
+
+Configuration Stores(Storage):
+..............................
+
+Physical storage:
+
+1.files
+2.directories -ldap....
+3.HTTP Servers - a separate HTTP server.
+4.Redis
+5.System Properties
+6.environment properties
+7.In memory Store: Application memory
+
+Configuration representation inisde vertx is json object.
+
+Storage file formats:
+1.yaml
+2.json
+3.properties
+......
+
+Verticle:
+ -can read config  data from the Vertx Context Object / DeploymentOptions
+ -can read config data  from the file via command line args
+ -can read from any storage via Vertx-Config module objects like ConfigReteriver.
+
+app/src/main/resources/conf/config.json
+
+{
+  "http.port": 3001,
+  "message": "Hello,Config"
+}
 
 
 
+package com.ibm.microservices.config;
+
+import io.vertx.config.ConfigRetriever;
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.core.json.JsonObject;
+import io.vertx.ext.web.Router;
+
+public class ApplicationConfigVerticle extends AbstractVerticle {
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start(startPromise);
+    JsonObject conf = config();
+    Router router = Router.router(vertx);
+    router.get("/api/config").handler(rc -> {
+      rc.response().setStatusCode(200).putHeader("content-type", "application/json").end(conf.encodePrettily());
+    });
+    vertx.createHttpServer().requestHandler(router).listen(conf.getInteger("http.port",3000));
+  }
+}
+
+package com.ibm.microservices.config;
+
+import io.vertx.config.ConfigRetriever;
+import io.vertx.config.ConfigRetrieverOptions;
+import io.vertx.config.ConfigStoreOptions;
+import io.vertx.core.DeploymentOptions;
+import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonObject;
+
+public class ApplicationDeployer {
+  private static void inMemoryConfig() {
+    Vertx vertx = Vertx.vertx();
+    //serverconfig
+    JsonObject serverConfig = new JsonObject().put("http.port", 3001);
+    //application data configuration
+    JsonObject config = new JsonObject().put("message", "Config Data").mergeIn(serverConfig);
+
+    DeploymentOptions options = new DeploymentOptions().setConfig(config);
+    vertx.deployVerticle(ApplicationConfigVerticle.class.getName(), options);
+  }
+
+  public static void main(String[] args) {
+
+    Vertx vertx = Vertx.vertx();
+
+    //storage configuration
+    ConfigStoreOptions options = new ConfigStoreOptions();
+    options.setType("file");
+    options.setFormat("json");
+    options.setConfig(new JsonObject().put("path", "conf/config.json"));
+
+    ConfigRetriever configRetriever = ConfigRetriever.create(vertx,
+      new ConfigRetrieverOptions().addStore(options));
+
+    configRetriever.getConfig(config -> {
+      if (config.succeeded()) {
+        System.out.println("Config is Ready");
+        JsonObject configRes = config.result();
+        System.out.println(configRes.encodePrettily());
+        DeploymentOptions deploymentOptions = new DeploymentOptions().setConfig(configRes);
+        vertx.deployVerticle(new ApplicationConfigVerticle(), deploymentOptions);
+      } else {
+        System.out.println("Config Error : " + config.cause());
+      }
+    });
+  }
+}
+..............................................................................................
+				Service Registry and Discovery
+..............................................................................................
+What is service?
+ Object
+What is registry?
+ Centeralized database
+What is database?
+ We store something and later we reterive.
+
+What is discovery?
+  Discovery is nothing but "lookup/search" something from the registry.
+
+Why Service Registry?
+  "Keeping Global shared information" across the distributed apps(micro service apps)
+
+
+Service Registry stores "Resources" so that other services in the application can access.
+
+
+What we can store inside Registry Server in vertx?
+
+ Resources:
+
+Types of Resources(Services):
+.............................
+The services you can register into registry
+
+HTTP Endpoint -HttpEndPoint.createRecord
+Event Bus Service -EventBus.createRecord
+Message Source
+JDBC Data Source
+Redis Data Source
+MongoDb Data Source
+
+How to store resources into Service Registry in vertx
+
+1.Record - bag - inside bag you can store any resource-store that record into registry server.
+
+Vertx Resource Storage:
+
+Vertx resources are stored in side registry by packing resouces into a object called "Record".
 
 
 
+Implementation:
+
+What you need?
+
+1.Registry server- where you can store all shared resources(httpendpoint,jdbcconnection,eventbus...)
+
+Vertx provides default built in Registry Server:
+...............................................
+-Key value data structure;
+  Map- implementations.
+
+Popular Registry Servers:
+.........................
+1.eureka server
+2.Apache zoo keeper
+3.Consule
+4.Kubernetes
+5.Redis
+etc....
+
+Resource--->Record 
+
+Service Discovery Objects:
+
+1.Record
+2.Service
+3.ServiceDiscovery
+
+Vertx has ServiceDiscovery Instance, which helps to publish / un publish ,and discover
+services 
 
 
+Publishing HTTP End Point into Registry, where other verticles can consume that.
 
 
+Steps:
+
+1.create Record
+
+2.wrap the resources into Record
+
+3.Publish it
+
+4.Get Record
+
+5.Get Reference from the Record
+
+6.Unpublish it if you dont need
+
+7.Use the Resource(service)
+
+
+package com.ibm.microservice.rest;
+
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.ext.web.Router;
+
+public class GreeterRestVerticle extends AbstractVerticle {
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start(startPromise);
+    Router router = Router.router(vertx);
+
+    router.get("/api/hello").handler(rc -> {
+      rc.response().end("Hello,Service Discovery and Registry");
+    });
+    vertx.createHttpServer().requestHandler(router).listen(3000);
+  }
+}
+
+package com.ibm.microservice.discovery;
+
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.core.json.JsonObject;
+import io.vertx.ext.web.Router;
+import io.vertx.ext.web.client.WebClient;
+import io.vertx.servicediscovery.ServiceDiscovery;
+import io.vertx.servicediscovery.ServiceDiscoveryOptions;
+import io.vertx.servicediscovery.types.HttpEndpoint;
+
+public class ConsumerVerticle extends AbstractVerticle {
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start(startPromise);
+    //Service Communication via Service Discovery
+    ServiceDiscoveryOptions discoveryOptions = new ServiceDiscoveryOptions();
+    //enable discovery server : apache zoo keeper
+    discoveryOptions.setBackendConfiguration(new JsonObject()
+      .put("connection", "127.0.0.1:2181")
+      .put("ephemeral", true)
+      .put("guaranteed", true)
+      .put("basePath", "/services/my-backend")
+    );
+    ServiceDiscovery discovery = ServiceDiscovery.create(vertx, discoveryOptions);
+
+    Router router = Router.router(vertx);
+
+    router.get("/api/greet").handler(rc -> {
+      //Communicate Service Registry and get Record,Get Reference.
+      HttpEndpoint.getWebClient(discovery, new JsonObject().put("name", "greeterApiRecord"), ar -> {
+        //Get Reference from the Record
+        WebClient webClient = ar.result();
+        //do your job with Resource
+        webClient.get("/api/hello").send(result -> {
+          System.out.println("Response is ready!");
+          rc.response().end(result.result().bodyAsString());
+        });
+        rc.response().endHandler(ar1 -> {
+          //remove /release discovery record
+          ServiceDiscovery.releaseServiceObject(discovery, webClient);
+        });
+      });
+
+    });
+    vertx.createHttpServer().requestHandler(router).listen(8080);
+
+
+  }
+}
+
+package com.ibm.microservice.discovery;
+
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.core.json.JsonObject;
+import io.vertx.servicediscovery.Record;
+import io.vertx.servicediscovery.ServiceDiscovery;
+import io.vertx.servicediscovery.ServiceDiscoveryOptions;
+import io.vertx.servicediscovery.types.HttpEndpoint;
+
+public class PublisherVerticle extends AbstractVerticle {
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start(startPromise);
+
+    //Service Registry Server configuration
+    ServiceDiscoveryOptions discoveryOptions = new ServiceDiscoveryOptions();
+    discoveryOptions.setBackendConfiguration(new JsonObject()
+      .put("connection", "127.0.0.1:2181")
+      .put("ephemeral", true)
+      .put("guaranteed", true)
+      .put("basePath", "/services/my-backend")
+    );
+    //Service Registry instance
+    ServiceDiscovery discovery = ServiceDiscovery.create(vertx, discoveryOptions);
+    //Record Creation : RecordType - RestApi
+    Record httpEndPointRecord = HttpEndpoint.createRecord("greeterApiRecord", "localhost", 3000, "/api/hello");
+    //Publish the Record
+    discovery.publish(httpEndPointRecord, ar -> {
+      if (ar.succeeded()) {
+        System.out.println("Successfully published >>>>" + ar.result().toJson());
+      } else {
+        System.out.println(" Not Published " + ar.cause());
+      }
+    });
+  }
+}
+package com.ibm.micro_servicediscovery;
+
+import com.ibm.microservice.discovery.ConsumerVerticle;
+import com.ibm.microservice.discovery.PublisherVerticle;
+import com.ibm.microservice.rest.GreeterRestVerticle;
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+
+public class MainVerticle extends AbstractVerticle {
+
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+      vertx.deployVerticle(new GreeterRestVerticle());
+      vertx.deployVerticle(new PublisherVerticle());
+      vertx.deployVerticle(new ConsumerVerticle());
+  }
+}
+..............................................................................................
+					Failure Management
+..............................................................................................
+
+Two failures
+1.slow calls - performance
+2.exceptions
+
+if my service is too slow , then what should i do
+     -TimeoutException
+if my service is throwing exception, then what should i do
+     -ServerException,bizException.
+
+How to handle exceptions and how to treat exceptions?
+try {
+  risky code
+}
+catch(){
+ // treating exception
+}
+
+We have patterns to handle exceptions in more declarative way :Reslience Design patterns
+
+Vert.x Provides circuit Breaker is an implementation of Circuit Breaker pattern.
+
+It keeps tracks of number of failures and opens the circuit when a threshold is reached.
+optionally fallback is given.
+
+States CB:
+
+1.closed
+   -Application is working well
+2.open
+  -Application is failing
+3.Half Open
+  -Application is recovering from failures
+
+
+if cb in open state
+ What to do? or how to react for failures.
+
+When cb can open?
+
+ if max failures reached
+ if timeout is reached
+  
+
+1.Circuit Breaker Configuration.
+
+
+1.Circuit Breaker Configuration.
+
+CircuitBreaker breaker = CircuitBreaker.create("my-circuit-breaker", vertx,
+    new CircuitBreakerOptions()
+        .setMaxFailures(5) // number of failure before opening the circuit
+        .setTimeout(2000) // consider a failure if the operation does not succeed in time
+        .setFallbackOnFailure(true) // do we call the fallback on failure
+        .setResetTimeout(10000) // time spent in open state before attempting to re-try
+);
+
+.............................................................................................
+package com.ibm.microservice.cb;
+
+import io.vertx.circuitbreaker.CircuitBreaker;
+import io.vertx.circuitbreaker.CircuitBreakerOptions;
+import io.vertx.circuitbreaker.HystrixMetricHandler;
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.ext.web.Router;
+import io.vertx.ext.web.client.HttpResponse;
+import io.vertx.ext.web.client.WebClient;
+
+public class HelloService extends AbstractVerticle {
+
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start(startPromise);
+    CircuitBreakerOptions options = new CircuitBreakerOptions();
+    options.setMaxFailures(2);// no of failures will be allowed , after that , ciruit will open
+    options.setMaxRetries(2);
+    options.setTimeout(3000); // consider a failure if the operation does not succeed in time
+    options.setFallbackOnFailure(true); // if any failure, should i handle fallback or not
+    options.setResetTimeout(5000); // time spent in open state before attempting to retry.
+
+    CircuitBreaker circuitBreaker = CircuitBreaker
+      .create("my-circuit-breaker", vertx, options)
+      .openHandler(open -> {
+        System.out.println("cb opened");
+      }).closeHandler(close -> {
+        System.out.println("cb closed");
+      }).retryPolicy(retryCount -> {
+        System.out.println("Retry value " + retryCount);
+        return retryCount * 100L;
+      });
+
+    Router router = Router.router(vertx);
+    router.get("/").handler(rc -> {
+      circuitBreaker.executeWithFallback(future -> {
+        //risky code
+        WebClient client = WebClient.create(vertx);
+        client.get(3000, "localhost", "/").send(ar -> {
+          // Obtain response
+          HttpResponse<Buffer> response = ar.result();
+          if (response.statusCode() != 200) {
+            future.fail("HTTP error");
+          } else {
+            future.complete(response.bodyAsString());
+          }
+        });
+      }, v -> {
+        // Executed when the circuit is opened
+        return "Hello, I am fallback";
+      }).onComplete(ar -> {
+        // Do something with the result
+        if (ar.succeeded()) {
+          //System.out.println(ar.result());
+          rc.response().end(ar.result());
+        } else {
+          System.out.println(ar.cause());
+
+        }
+      });
+
+    });
+
+    // Register the metric handler
+    router.get("/hystrix-metrics").handler(HystrixMetricHandler.create(vertx));
+
+    vertx.createHttpServer().requestHandler(router).listen(8080);
+
+  }
+}
+
+package com.ibm.microservice.cb;
+
+import io.vertx.core.AbstractVerticle;
+
+public class GreeterService extends AbstractVerticle {
+  @Override
+  public void start() throws Exception {
+    super.start();
+    vertx.createHttpServer().requestHandler(r -> {
+      //to simulate slow calls : The response will be returned after 5secs
+      vertx.setTimer(5000, ar -> {
+        r.response().end("I am fine but delayed!");
+      });
+    }).listen(3000);
+  }
+}
+
+package com.ibm.microservice.cb;
+
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+
+public class MainVerticle extends AbstractVerticle {
+
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    vertx.deployVerticle(new HelloService());
+    vertx.deployVerticle(new GreeterService());
+  }
+}
+
+........................&&&&&&&&&&&&&&&&&&&&&&&...............................................
+
+				..............................................................................................
+			Scalability : How to run multiple instance of the same service
+                        (scalablity,loadbalancer,high availablity)
+.............................................................................................
+package com.ibm.microservices.scalling;
+
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+
+public class MainVerticle extends AbstractVerticle {
+
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    vertx.createHttpServer().requestHandler(req -> {
+      req.response()
+        .putHeader("content-type", "text/plain")
+        .end("Hello!How are you : " + Thread.currentThread().getName() + " " + hashCode());
+    }).listen(8888, http -> {
+      if (http.succeeded()) {
+        startPromise.complete();
+        System.out.println("HTTP server started on port 8888");
+      } else {
+        startPromise.fail(http.cause());
+      }
+    });
+  }
+}
+package com.ibm.microservices.scalling;
+
+import io.vertx.core.DeploymentOptions;
+import io.vertx.core.Vertx;
+
+public class Deployer {
+  public static void main(String[] args) {
+    Vertx vertx = Vertx.vertx();
+    DeploymentOptions options = new DeploymentOptions().setInstances(3);
+    vertx.deployVerticle(MainVerticle.class.getName(), options, asyncResult -> {
+      System.out.println(asyncResult.result());
+    });
+
+  }
+}
+............................................................................................
+				Advanced Scalability and High Availablity
+............................................................................................
+
+............................................................................................
+			Clustering : How to communicate across vertx Engine
+			         (Scallablity + High availablity)
+............................................................................................
+
+Distributed Vertx:
+.................
+
+As of now we have seen 
+ -How to write verticle on single vertx engine
+ -How verticles communicate using event bus on single vertx engine
+
+
+Multi node architecture: Multi vertx engine architecuture:
+
+Vertx Types:
+...........
+
+1.Standard Vertx
+   -single vertx engine
+2.Clustered Vertx
+   -distributed vertx engine.
+
+Clustering:
+
+ Grouping  multiple different vertx engines  under one single communication system.
+Kind of networking.we are making networking infrastructure among Vertx engins.
+
+How many vertx engines can communcates?
+
+ more vertx engines
+
+Via Cluster Managers and Providers :
+
+ Cluster Providers are third party servers, through vertx can communicates.
+
+Vertx - Clustering:
+...................
+
+Clustering , means organization application under one communication channel.
+
+Vertx uses integration/clustering technologies.
+
+Vertx uses hazelcast ClusterManager/provider by default.
+
+Cluster : group of something - group of verticles/vertx instance/jvm
+
+in order to connect vertx apps across processes, we need cordinator 
+-Bride softwares
+
+Vertx can work with
+-hazelcast
+-apache zookeeper
+-apache ignite
+-apache Infinispan
+
+dependency:
+
+vertx-hazelcast
+
+ClusterManagers
+
+by default, vertx has hazelcast, we dont need to configure by default.
+
+
+ClusterManagers
+
+by default, vertx has hazelcast, we dont need to configure by default.
+
+
+How to enable clustering?
+
+In vertx clustering can be enabled in two ways
+
+1.through code
+
+Vertx Configuration;
+
+Types of vertx:
+1.standard vertx
+2.clusteredVertx
+
+ClusterManager mgr = new HazelcastClusterManager();
+
+VertxOptions options = new VertxOptions().setClusterManager(mgr);
+
+Vertx.clusteredVertx(options, res -> {
+  if (res.succeeded()) {
+    Vertx vertx = res.result();
+    //deployment
+  } else {
+    // failed!
+  }
+});
+
+Configuring cluster manager:
+
+Vertx provides default-cluster.xml which is packaged inside cluster jar.
+
+if you want to override you can override cluster.xml file
+
+How to enable cluster feature?
+
+java -jar target/app.jar -cp . -cluster
+
+vertx run verticle -cp . -cluster
+..............................................................................................
+				
+1.Clustering
+   
+   We can run multiple vertx applications and each application can communicate each other 
+via centeralized cluter channel software(hazelcast,zookeeper,apache ignite).
+
+in order to setup cluster on vertx engine
+1.we have to enable via Vertx.clusteredVertx Method.
+
+
+package com.ibm.microservices.scalling;
+
+import io.vertx.core.*;
+import io.vertx.core.eventbus.EventBus;
+import io.vertx.core.eventbus.MessageConsumer;
+import io.vertx.core.spi.cluster.ClusterManager;
+import io.vertx.spi.cluster.hazelcast.HazelcastClusterManager;
+
+import java.lang.management.ManagementFactory;
+import java.lang.management.RuntimeMXBean;
+
+public class ConsumerVerticle extends AbstractVerticle {
+  public static void main(String[] args) {
+    //To which cluster software to connect
+    ClusterManager mgr = new HazelcastClusterManager();
+    //VertxOptions
+    VertxOptions options = new VertxOptions()
+      .setClusterManager(mgr)
+      .setHAEnabled(true)
+      .setHAGroup("g1");
+    //create clusteredVertx Engine
+
+    Vertx.clusteredVertx(options, cluster -> {
+      if (cluster.succeeded()) {
+        //deploying the verticle in cluster
+        DeploymentOptions deploymentOptions = new DeploymentOptions();
+        cluster.result().deployVerticle("com.ibm.microservices.scalling.ConsumerVerticle", deploymentOptions, res -> {
+          if (res.succeeded()) {
+            System.out.println("Deployment id is: " + res.result());
+          } else {
+            System.out.println("Deployment failed!");
+          }
+        });
+      } else {
+        System.out.println("Cluster up failed: " + cluster.cause());
+      }
+    });
+  }
+
+  private void consumeNews() {
+    EventBus eventBus = vertx.eventBus();
+    //Declare Consumer
+    MessageConsumer<String> consumer = eventBus.consumer("news.in.covid");
+    //handle/process the message/news
+    consumer.handler(news -> {
+      RuntimeMXBean runtimeBean = ManagementFactory.getRuntimeMXBean();
+      String jvmName = runtimeBean.getName();
+      System.out.println("Node  Name = " + jvmName);
+      long pid = Long.valueOf(jvmName.split("@")[0]);
+      System.out.println("PID  = " + pid + " Thread = " + Thread.currentThread().getName());
+      System.out.println("News 7's Today News : " + news.body());
+    });
+  }
+
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start(startPromise);
+    consumeNews();
+  }
+}
+..............................................................................................
+package com.ibm.microservices.scalling;
+
+import io.vertx.core.*;
+import io.vertx.core.spi.cluster.ClusterManager;
+import io.vertx.spi.cluster.hazelcast.HazelcastClusterManager;
+
+import java.lang.management.ManagementFactory;
+import java.lang.management.RuntimeMXBean;
+
+public class PublisherVerticle extends AbstractVerticle {
+
+  public static void main(String[] args) {
+    ClusterManager mgr = new HazelcastClusterManager();
+
+    VertxOptions options = new VertxOptions()
+      .setClusterManager(mgr)
+      .setHAEnabled(true)
+      .setHAGroup("g1");
+
+    Vertx.clusteredVertx(options, vertxAsyncResult -> {
+      if (vertxAsyncResult.succeeded()) {
+        //deploy verticles on cluster env.
+        DeploymentOptions deploymentOptions = new DeploymentOptions()
+          .setInstances(2).setHa(true);
+        vertxAsyncResult.result().deployVerticle("com.ibm.microservices.scalling.PublisherVerticle", deploymentOptions, res -> {
+          if (res.succeeded()) {
+            System.out.println("Deployment id is: " + res.result());
+          } else {
+            System.out.println("Deployment failed!");
+          }
+        });
+
+      } else {
+        System.out.println("Cluster up failed: " + vertxAsyncResult.cause());
+      }
+    });
+  }
+
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    super.start(startPromise);
+    RuntimeMXBean runtimeBean = ManagementFactory.getRuntimeMXBean();
+    String jvmName = runtimeBean.getName();
+    //processid
+    long pid = Long.valueOf(jvmName.split("@")[0]);
+    vertx.setPeriodic(5000, ar -> {
+      System.out.println("PID  = " + pid + " Thread = " + Thread.currentThread().getName());
+      //publish message
+      String news = "Last 24 hrs, 50000 covid patients in India" + " From  " + jvmName;
+      vertx.eventBus().publish("news.in.covid", news);
+    });
+  }
+}
+..............................................................................................
+					Service Proxy
+..............................................................................................
+
+
+Layer:
+
+1.Verticle
+   -RESTAPI
+   -WithoutRestAPI
+
+2.Service Proxy
+
+Code developer writes
+
+  ServiceInterface
+
+  ServiceImplementation
+
+
+Code generatored by vertx : Stub classes
+  exposes /sends service objects over event bus
+
+codegen: compiler plugin
+
+<dependency>
+ <groupId>io.vertx</groupId>
+ <artifactId>vertx-codegen</artifactId>
+ <version>4.1.4</version>
+ <scope>provided</scope>
+</dependency>
